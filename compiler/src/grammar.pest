@@ -1,0 +1,18 @@
+instruction_name = @{ (ASCII_ALPHA)+ }
+
+decimal = @{ (ASCII_DIGIT){1,3} }
+hex = @{ "$" ~ (ASCII_HEX_DIGIT){1,2} }
+immediate = { "#" ~ (hex | decimal) }
+register = { (hex | decimal) }
+operand = { (label | immediate | register) }
+
+label = @{ ((ASCII_ALPHANUMERIC | "_"))+ }
+label_define = { label ~ ":" }
+instruction = { instruction_name ~ (operand)? }
+
+WHITESPACE = _{ " " | "\t" }
+COMMENT = _{ ";" ~ (!(NEWLINE) ~ ANY)* }
+
+stmt = _{ (label_define | instruction) }
+
+file = { SOI ~ NEWLINE* ~ (stmt ~ NEWLINE+)* ~ stmt? ~ EOI }
