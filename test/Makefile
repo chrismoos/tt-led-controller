@@ -3,9 +3,14 @@
 
 # defaults
 SIM ?= icarus
+FST ?= -fst # Use more efficient FST format
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = project.v cpu.sv dff_sync.sv led_controller.sv led_effect_chase.sv led_effect_pulse.sv reset.sv sk6812rgbw.sv spi_flash_cache.sv spi_flash.sv spi_master.sv spi_slave.sv timer.sv
+PROJECT_SOURCES = project.v \
+	cpu_6502.sv cpu_6502_alu.sv cpu_6502_ir_decoder.sv cpu_6502_microcode.sv \
+	bus_multiplexer.sv clock_control.sv mcu.sv \
+	gpio.sv timer.sv sk6812rgbw_peripheral.sv sk6812rgbw.sv \
+	uart.sv uart_tx.sv uart_rx.sv fifo.sv
 
 ifneq ($(GATES),yes)
 
@@ -18,7 +23,6 @@ else
 # Gate level simulation:
 SIM_BUILD				= sim_build/gl
 COMPILE_ARGS    += -DGL_TEST
-export GATES
 COMPILE_ARGS    += -DFUNCTIONAL
 COMPILE_ARGS    += -DSIM
 VERILOG_SOURCES += $(PDK_ROOT)/ihp-sg13g2/libs.ref/sg13g2_io/verilog/sg13g2_io.v
