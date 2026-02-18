@@ -33,8 +33,10 @@ module tt_um_chrismoos_6502_mcu (
   wire mcu_phi1;
   wire mcu_phi2;
   wire mcu_sync;
+  /* verilator lint_off UNUSEDSIGNAL */
   wire [7:0] gpio_out;
   wire [7:0] gpio_oe;
+  /* verilator lint_on UNUSEDSIGNAL */
 
   // Bus multiplexer
   wire [7:0] mux_data_out;
@@ -45,8 +47,7 @@ module tt_um_chrismoos_6502_mcu (
     .i_cpu_data(mcu_bus_data_out),
     .i_cpu_addr(mcu_bus_addr),
     .o_mux_data(mux_data_out),
-    .o_mux_data_oe(mux_data_oe),
-    .i_mux_data(uio_in)
+    .o_mux_data_oe(mux_data_oe)
   );
 
   // MCU
@@ -74,7 +75,9 @@ module tt_um_chrismoos_6502_mcu (
     .i_irq_n_ext(i_irq_n),
     .i_so_n(i_so_n),
     .i_debug_sel(3'b0),
+    /* verilator lint_off PINCONNECTEMPTY */
     .o_debug_data()
+    /* verilator lint_on PINCONNECTEMPTY */
   );
 
   // Outputs - dedicated CPU control signals + GPIO outputs
