@@ -54,8 +54,9 @@ module tt_um_chrismoos_6502_mcu (
   mcu #(
     .START_PC_ENABLED(0),
     .START_PC(16'h0400),
+    .ENABLE_SK6812(0),
     .LED_DEFAULT_CLOCK_DIV(2),
-    .CPU_CLOCK_DIV_DEFAULT(8'h00),
+    .CPU_CLOCK_DIV_DEFAULT(8'h49),  // CPU at 1Mhz
     .UART_FIFO_DEPTH(2)
   ) mcu_inst (
     .i_clk(clk),

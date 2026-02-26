@@ -1,4 +1,4 @@
-# 6502 Microcontroller for TinyTapeout
+# m6502 Microcontroller for TinyTapeout
 
 A complete MOS Technology 6502-compatible CPU with integrated peripherals, designed specifically for TinyTapeout. Features a bus multiplexer architecture to efficiently expose the full 64KB address space and peripheral functions through the limited 24-pin interface.
 
@@ -95,85 +95,12 @@ Typical configuration: RAM at 0x0000-0x7FFF, ROM at 0x8000-0xFFFF with reset vec
 ### Minimal Setup
 
 1. **Power**: 3.3V I/O, 1.2V core
-2. **Clock**: 50MHz nominal (configurable)
+2. **Clock**: 20MHz nominal (configurable)
 3. **Reset**: Assert reset_n low, then high
 4. **Memory Controller**: RP2040 or similar providing:
    - MUX_SEL[1:0] sequencing
    - External RAM/ROM contents
    - Proper bus timing
-
-### Example: LED Blink
-
-```asm
-; Configure GPIO2 as output
-LDA #$04          ; Bit 2
-STA $A000         ; OE register
-
-loop:
-    LDA $A001     ; Read output
-    EOR #$04      ; Toggle bit 2
-    STA $A001     ; Write back
-    JSR delay
-    JMP loop
-```
-
-### Example: UART "Hello World"
-
-```asm
-; Configure GPIO2 as UART TX
-LDA #$01          ; UART0_TX mode
-STA $A006         ; MODE_PIN2
-
-; Set 9600 baud @ 50MHz
-LDA #$45
-STA $A043         ; BAUD_LO
-LDA #$01
-STA $A044         ; BAUD_HI
-
-; Enable TX
-LDA #$01
-STA $A040         ; CTRL
-
-; Send "Hello"
-LDX #0
-send:
-    LDA msg, X
-    BEQ done
-    ; Wait for TX ready
-wait:
-    LDA $A041
-    AND #$01
-    BEQ wait
-    LDA msg, X
-    STA $A042
-    INX
-    BNE send
-done:
-
-msg: .byte "Hello", $0D, $0A, 0
-```
-
-### Example: RGB LED Strip
-
-```asm
-; Configure GPIO4 as SK6812 data
-LDA #$03          ; SK6812_DATA mode
-STA $A008         ; MODE_PIN4
-
-; Set color: Red
-wait:
-    LDA $A016     ; STATUS
-    AND #$01      ; BUSY?
-    BNE wait
-
-LDA #$FF
-STA $A012         ; RED = 255
-LDA #$00
-STA $A013         ; GREEN = 0
-STA $A014         ; BLUE = 0
-LDA #$01
-STA $A010         ; Start transmission
-```
 
 ## Peripheral Registers Quick Reference
 
@@ -181,8 +108,9 @@ STA $A010         ; Start transmission
 - **0xA000**: OE - Output Enable (0=input, 1=output)
 - **0xA001**: OUT - Output Data
 - **0xA002**: IN - Input Data (read-only)
-- **0xA004-0xA009**: MODE_PIN0-5 - Pin function select
+- **0xA004-0xA00B**: MODE_PIN0-7 - Pin function select
   - 0x00 = GPIO, 0x01 = UART_TX, 0x02 = UART_RX, 0x03 = SK6812_DATA
+  - On TinyTapeout only PIN0-5 are connected to physical pins
 
 ### SK6812 LED (0xA010-0xA017)
 - **0xA010**: CONTROL - Write 1 to start
@@ -208,13 +136,37 @@ STA $A010         ; Start transmission
 - **0xA042**: DATA - FIFO access (read/write)
 - **0xA043-0xA044**: BAUD_LO/HI - Baud divisor
   - baud = sysclk / (16 × (divisor + 1))
-  - 9600 @ 50MHz: divisor = 325 (0x0145)
+
+## Testing
+
+Testbenches use cocotb:
+
+```bash
+cd test
+make
+```
+
+Tests cover:
+- CPU instruction execution
+- Peripheral register access
+- Bus multiplexer protocol
+- UART TX/RX
+- Timer operation
+- GPIO modes
+
+## Architecture
+
+**Technology**: IHP SG13G2 130nm
+**Die Size**: 2×2 TinyTapeout tiles
+**Clock**: 20 MHz nominal
 
 ## External Resources
 
-- **Datasheet**: [6502_mcu_datasheet.pdf](6502_mcu_datasheet.pdf) - Complete technical reference
-- **Upstream Project**: [m6502](https://github.com/chrismoos/6502-mcu) - Full MCU implementation with RP2040 memory controller example
+- **Datasheet**: [m6502_datasheet.pdf](m6502_datasheet.pdf) - Complete technical reference
+- **Upstream Project**: [m6502](https://github.com/chrismoos/m6502) - Full MCU implementation with RP2040 memory controller example
 - **6502 Reference**: [6502.org](http://www.6502.org/) - Instruction set and programming guides
+- **W65C02S Datasheet**: Western Design Center
+- **MOS 6502 Programming Manual**: Original MOS Technology documentation
 
 ## Development Tools
 

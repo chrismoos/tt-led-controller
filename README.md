@@ -2,178 +2,41 @@
 
 # m6502 Microcontroller for TinyTapeout
 
-A complete MOS Technology 6502-compatible CPU with integrated peripherals, designed for TinyTapeout. Features a bus multiplexer architecture that efficiently exposes the full 64KB address space through the limited 24-pin interface.
+- [Read the documentation for project](docs/info.md)
 
-## Features
+## What is Tiny Tapeout?
 
-- **Complete 6502 CPU** - Cycle-accurate implementation with all documented opcodes
-- **Bus Multiplexer** - 4-phase multiplexing reduces pin count from 24 to 8 data pins
-- **External Memory** - Full 64KB address space via multiplexed bus
-- **Rich Peripherals**:
-  - GPIO (6 pins with pin multiplexing)
-  - UART (8N1 with 4-byte FIFOs)
-  - Timer (16-bit with prescaler and interrupts)
-  - SK6812 RGB LED controller
-  - Clock control for dynamic frequency scaling
-- **Pin Multiplexing** - Route UART and SK6812 to any GPIO pin
-- **TinyTapeout Optimized** - Fits in 2×2 tile allocation
+Tiny Tapeout is an educational project that aims to make it easier and cheaper than ever to get your digital and analog designs manufactured on a real chip.
 
-## Quick Start
+To learn more and get started, visit https://tinytapeout.com.
 
-### Pinout
+## Set up your Verilog project
 
-| Input (ui_in) | Output (uo_out) | Bidirectional (uio) |
-|---------------|-----------------|---------------------|
-| MUX_SEL[1:0] (0-1) | PHI1 (0) | MUX_DATA[7:0] |
-| RDY (2) | PHI2 (1) | (multiplexed bus) |
-| NMI_N (3) | R/W (2) | |
-| IRQ_N (4) | SYNC (3) | |
-| SO_N (5) | GPIOA2-5 (4-7) | |
-| GPIOA0-1 (6-7) | | |
+1. Add your Verilog files to the `src` folder.
+2. Edit the [info.yaml](info.yaml) and update information about your project, paying special attention to the `source_files` and `top_module` properties. If you are upgrading an existing Tiny Tapeout project, check out our [online info.yaml migration tool](https://tinytapeout.github.io/tt-yaml-upgrade-tool/).
+3. Edit [docs/info.md](docs/info.md) and add a description of your project.
+4. Adapt the testbench to your design. See [test/README.md](test/README.md) for more information.
 
-### Memory Map
+The GitHub action will automatically build the ASIC files using [LibreLane](https://www.zerotoasiccourse.com/terminology/librelane/).
 
-| Address | Peripheral | Description |
-|---------|-----------|-------------|
-| 0xA000-0xA00B | GPIO | 6 I/O pins with mode registers |
-| 0xA010-0xA017 | SK6812 | RGB LED controller |
-| 0xA020-0xA027 | Timer | 16-bit timer/counter |
-| 0xA030-0xA033 | Clock | CPU clock control |
-| 0xA040-0xA047 | UART | Serial communication |
-| All others | External | Via bus multiplexer |
+## Enable GitHub actions to build the results page
 
-### Example: Blink LED
-
-```asm
-; Configure GPIO2 as output
-LDA #$04          ; Bit 2
-STA $A000         ; OE register
-
-loop:
-    LDA $A001     ; Read current output
-    EOR #$04      ; Toggle bit 2
-    STA $A001     ; Write back
-    JSR delay
-    JMP loop
-```
-
-### Example: UART Hello World
-
-```asm
-; Configure GPIO2 as UART TX
-LDA #$01          ; UART0_TX mode
-STA $A006         ; MODE_PIN2
-
-; Set 9600 baud @ 50MHz
-LDA #$45
-STA $A043         ; BAUD_LO
-LDA #$01
-STA $A044         ; BAUD_HI
-
-; Enable TX and send
-LDA #$01
-STA $A040         ; Enable transmitter
-
-; Send "Hello"
-LDX #0
-send:
-    LDA msg, X
-    BEQ done
-wait:
-    LDA $A041     ; Check TX_READY
-    AND #$01
-    BEQ wait
-    LDA msg, X
-    STA $A042     ; Write byte
-    INX
-    BNE send
-done:
-
-msg: .byte "Hello", $0D, $0A, 0
-```
-
-## Documentation
-
-- **[Complete Datasheet](docs/6502_mcu_datasheet.pdf)** - Full technical reference (build with `cd docs && make`)
-- **[Quick Reference](docs/info.md)** - Peripheral registers and examples
-- **[Upstream m6502](https://github.com/chrismoos/6502-mcu)** - Full MCU project with RP2040 memory controller
-
-## How It Works
-
-The m6502 uses a **bus multiplexer** to expose the 6502's 16-bit address bus and 8-bit data bus through just 8 bidirectional pins. An external controller (RP2040 on TinyTapeout demo board) sequences through 4 phases per CPU cycle:
-
-1. **ADDR_HI** - Latch address[15:8]
-2. **ADDR_LO** - Latch address[7:0]
-3. **DATA_IN/OUT** - Read or write data
-
-All phases complete within one CPU cycle, so **there's no performance penalty** compared to a parallel bus.
-
-The CPU accesses memory-mapped peripherals at 0xA000-0xA047 internally, while all other addresses are routed to external memory via the multiplexer.
-
-## Building
-
-### Hardware Requirements
-
-- TinyTapeout ASIC or FPGA implementation
-- External memory controller (RP2040 recommended)
-- 50MHz clock (configurable)
-- 3.3V I/O, 1.2V core
-
-### Software Toolchain
-
-- **cc65** - C compiler and assembler for 6502
-- **ACME** or **xa65** - Alternative assemblers
-- **py65** - Python-based simulator for testing
-
-### Synthesis
-
-The design uses the TinyTapeout/LibreLane flow:
-
-```bash
-# Local hardening (requires Docker)
-# See: https://www.tinytapeout.com/guides/local-hardening/
-```
-
-GitHub Actions automatically builds the GDS on push.
-
-## Testing
-
-Testbenches use cocotb for simulation:
-
-```bash
-cd test
-make
-```
-
-Tests cover:
-- CPU instruction execution
-- Peripheral register access
-- Bus multiplexer protocol
-- UART TX/RX
-- Timer operation
-- GPIO modes
-
-## Architecture
-
-**Technology**: IHP SG13G2 130nm
-**Die Size**: 2×2 TinyTapeout tiles
-**Clock**: 50 MHz nominal
+- [Enabling GitHub Pages](https://tinytapeout.com/faq/#my-github-action-is-failing-on-the-pages-part)
 
 ## Resources
 
-- **6502 Reference**: [6502.org](http://www.6502.org/)
-- **TinyTapeout**: [tinytapeout.com](https://tinytapeout.com)
-- **W65C02S Datasheet**: Western Design Center
-- **MOS 6502 Programming Manual**: Original documentation
+- [FAQ](https://tinytapeout.com/faq/)
+- [Digital design lessons](https://tinytapeout.com/digital_design/)
+- [Learn how semiconductors work](https://tinytapeout.com/siliwiz/)
+- [Join the community](https://tinytapeout.com/discord)
+- [Build your design locally](https://www.tinytapeout.com/guides/local-hardening/)
 
-## License
+## What next?
 
-Apache-2.0
-
-## Author
-
-Chris Moos ([@xoclipse](https://discord.com/users/xoclipse))
-
-## What is TinyTapeout?
-
-Tiny Tapeout is an educational project that makes it easier and cheaper than ever to get your digital designs manufactured on a real chip. Learn more at [tinytapeout.com](https://tinytapeout.com).
+- [Submit your design to the next shuttle](https://app.tinytapeout.com/).
+- Edit [this README](README.md) and explain your design, how it works, and how to test it.
+- Share your project on your social network of choice:
+  - LinkedIn [#tinytapeout](https://www.linkedin.com/search/results/content/?keywords=%23tinytapeout) [@TinyTapeout](https://www.linkedin.com/company/100708654/)
+  - Mastodon [#tinytapeout](https://chaos.social/tags/tinytapeout) [@matthewvenn](https://chaos.social/@matthewvenn)
+  - X (formerly Twitter) [#tinytapeout](https://twitter.com/hashtag/tinytapeout) [@tinytapeout](https://twitter.com/tinytapeout)
+  - Bluesky [@tinytapeout.com](https://bsky.app/profile/tinytapeout.com)

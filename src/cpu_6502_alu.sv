@@ -17,6 +17,7 @@ wire b7, b0;
 assign b7 = i_lhs[7];
 assign b0 = i_lhs[0];
 
+
 reg [4:0] result_hi, result_lo;
 reg bcd_carry_lo, bcd_carry_hi;
 
