@@ -1,161 +1,179 @@
-## How it works
+# m6502 Microcontroller for TinyTapeout
 
-The LED Controller is a programmable SK6812RGBW LED strip driver featuring a custom 8-bit microprocessor that executes programs via XIP (Execute-In-Place) from external SPI flash memory.
+A complete MOS Technology 6502-compatible CPU with integrated peripherals, designed specifically for TinyTapeout. Features a bus multiplexer architecture to efficiently expose the full 64KB address space and peripheral functions through the limited 24-pin interface.
 
-### Key Features
-- SK6812RGBW LED protocol (32-bit GRBW format)
-- Up to 255 LEDs, 3 configurable colors
-- Built-in effects: None, Chase, Pulse
-- Custom programs via XIP from SPI flash (enabled by default)
-- SPI slave interface for runtime configuration
-- Chip ID: 0x6925
 
-### Effects
+## Features
 
-| Effect | Value | Description |
-|--------|-------|-------------|
-| None | 0 | Static display - all LEDs show the same color, cycling through configured colors |
-| Chase | 1 | Colors shift along the LED strip at 2Hz, creating a moving pattern |
-| Pulse | 2 | Breathing/fading effect - LEDs smoothly fade in and out (~2.5 second cycle) |
-| Custom | 3 | Execute microprogram from SPI flash (XIP mode, default on power-up) |
+- **Complete 6502 CPU**: Cycle-accurate implementation with all documented opcodes
+- **Bus Multiplexer**: 4-phase multiplexing reduces pin requirements from 24 pins to 8 data pins + control
+- **External Memory Support**: Full 64KB address space via multiplexed bus (RP2040 controller recommended)
+- **Integrated Peripherals**:
+  - **GPIO**: 6 pins (2 input-only, 4 output-only on TinyTapeout)
+  - **UART**: 8N1 serial with 4-byte TX/RX FIFOs, configurable baud rate
+  - **Timer**: 16-bit timer with prescaler, auto-reload, and interrupt support
+  - **SK6812**: Hardware RGB LED controller with precise timing
+  - **Clock Control**: Runtime CPU clock division for power management
+- **Pin Multiplexing**: UART and SK6812 can be routed to any GPIO pin via mode registers
+- **TinyTapeout Optimized**: Fits in 2×2 tile allocation (~2,900 lines RTL)
 
-### Architecture
-- **CPU**: 8-bit data, 16-bit instructions (opcode + operand), X/Y registers, Z/N flags, 16-byte scratch memory
-- **SPI Flash**: XIP at 25 MHz (half system clock), 24-bit addressing default, supports 0x03 read command
-- **Note**: A cache line implementation exists but is not included due to 2x2 tile area constraints
+## How it Works
 
-### SPI Flash XIP
-- **Enabled by default** - device executes from flash address 0x0000 on power-up
-- SPI clock runs at 1/2 system clock (25 MHz max at 50 MHz)
-- Supports 24-bit (16 MB) or 16-bit (64 KB) addressing
-- Uses standard SPI Mode 0 (CPOL=0, CPHA=0)
+### System Architecture
 
-### Register Map (SPI Slave)
-| Addr | Name | R/W | Default | Description |
-|------|------|-----|---------|-------------|
-| 0x01 | EFFECT | R/W | 0x03 | Effect mode (0=None, 1=Chase, 2=Pulse, 3=Custom/XIP) |
-| 0x02 | CHIP_ID_H | R | 0x69 | Chip ID high byte |
-| 0x03 | CHIP_ID_L | R | 0x25 | Chip ID low byte |
-| 0x04-07 | COLOR0 | R/W | 0x00FF0000 | Color 0 (GRBW format, 4 bytes) |
-| 0x08-0B | COLOR1 | R/W | 0xFF000000 | Color 1 (GRBW format, 4 bytes) |
-| 0x0C-0F | COLOR2 | R/W | 0x0000FF00 | Color 2 (GRBW format, 4 bytes) |
-| 0x10 | NUM_LEDS | R/W | 30 | LED count (1-255) |
-| 0x11 | NUM_COLORS | R/W | 3 | Active colors (1-3) |
-| 0x12 | CLK_DIV | R/W | 5 | Clock divider for 100ns ticks |
-| 0x13 | FLASH_24_BIT | R/W | 1 | Flash addressing (1=24-bit, 0=16-bit) |
-| 0x14 | CPU_RESET | W | - | Reset CPU and flash state |
+The 6502 MCU consists of three main components:
 
-### Instruction Set
+1. **6502 CPU Core**: Executes instructions and drives the internal bus
+2. **Bus Multiplexer**: Time-multiplexes 16-bit address + 8-bit data into 8 shared pins
+3. **Memory-Mapped Peripherals**: Decode addresses 0xA000-0xA047 for internal devices
 
-The CPU uses 16-bit instructions: high byte is the opcode, low byte is the operand.
+All memory accesses outside the peripheral range (0xA000-0xA047) are routed to the external bus via the multiplexer, allowing up to ~64KB of external RAM/ROM.
 
-| Opcode | Mnemonic | Operand | Description |
-|--------|----------|---------|-------------|
-| 0x01 | LDX #imm | immediate | Load X register with immediate value |
-| 0x02 | LDY #imm | immediate | Load Y register with immediate value |
-| 0x03 | CPX #imm | immediate | Compare X with immediate, set Z/N flags |
-| 0x04 | CPY #imm | immediate | Compare Y with immediate, set Z/N flags |
-| 0x05 | INY | - | Increment Y register |
-| 0x06 | INX | - | Increment X register |
-| 0x07 | BNE | offset | Branch if Z=0 (not equal) |
-| 0x08 | BEQ | offset | Branch if Z=1 (equal) |
-| 0x09 | STALL | count | Delay for count * 10ms |
-| 0x0A | LDX addr | address | Load X from memory address |
-| 0x0B | LDY addr | address | Load Y from memory address |
-| 0x0C | CPX addr | address | Compare X with memory, set Z/N flags |
-| 0x0D | CPY addr | address | Compare Y with memory, set Z/N flags |
-| 0x0E | STY addr | address | Store Y to memory address |
-| 0x0F | STX addr | address | Store X to memory address |
-| 0x10 | JMP | address | Jump to address (absolute) |
-| 0x11 | BMI | offset | Branch if N=1 (negative) |
-| 0x12 | BPL | offset | Branch if N=0 (positive) |
-| 0x13 | DEY | - | Decrement Y register |
-| 0x14 | DEX | - | Decrement X register |
-| other | NOP | - | No operation (undefined opcodes are ignored) |
+### Bus Multiplexing
 
-**Branch offset calculation**: Branch target = PC + 2 + offset (offset is signed -128 to +127)
+The multiplexer reduces pin count by sequencing through 4 phases within each CPU cycle:
 
-### Memory-Mapped Addresses
+| MUX_SEL | Phase | Direction | Data |
+|---------|-------|-----------|------|
+| `01` | ADDR_HI | MCU → Ext | Address[15:8] |
+| `00` | ADDR_LO | MCU → Ext | Address[7:0] |
+| `10` | DATA_IN | Ext → MCU | Read data |
+| `11` | DATA_OUT | MCU → Ext | Write data |
 
-| Address | Name | Access | Description |
-|---------|------|--------|-------------|
-| 0x00 | NUM_LEDS | Read | Number of LEDs configured |
-| 0x01 | NUM_COLORS | Read | Number of active colors (1-3) |
-| 0x02 | LED_PIXEL | Write | Write LED pixel using color index in low 2 bits |
-| 0x10-0x1F | SCRATCH | R/W | 16-byte scratch memory for program use |
+The external controller (RP2040 on TinyTapeout demo board) monitors PHI2 and sequences MUX_SEL accordingly. **There is no performance penalty** - all phases complete within one CPU cycle.
 
-**LED_PIXEL write**: Store a value where bits [1:0] select the color index (0-2), or 3 for off/black.
+### Memory Map
 
-## How to test
+| Address Range | Size | Description |
+|--------------|------|-------------|
+| 0x0000-0x9FFF | 40KB | External memory |
+| 0xA000-0xA00B | 12B | GPIO registers |
+| 0xA010-0xA017 | 8B | SK6812 LED controller |
+| 0xA020-0xA027 | 8B | Timer |
+| 0xA030-0xA033 | 4B | Clock control |
+| 0xA040-0xA047 | 8B | UART |
+| 0xA048-0xFFFF | ~22KB | External memory |
 
-### Simulation with cocotb
+Typical configuration: RAM at 0x0000-0x7FFF, ROM at 0x8000-0xFFFF with reset vector at 0xFFFC.
 
-Run the test suite using cocotb:
+## Pin Configuration
+
+### Input Pins (ui_in[7:0])
+
+| Pin | Function | Description |
+|-----|----------|-------------|
+| 0 | MUX_SEL[0] | Bus phase select bit 0 |
+| 1 | MUX_SEL[1] | Bus phase select bit 1 |
+| 2 | RDY | CPU ready signal (active high) |
+| 3 | NMI_N | Non-maskable interrupt (active low) |
+| 4 | IRQ_N | Interrupt request (active low) |
+| 5 | SO_N | Set overflow flag (active low) |
+| 6 | GPIOA0 | GPIO pin 0 input (unidirectional) |
+| 7 | GPIOA1 | GPIO pin 1 input (unidirectional) |
+
+### Output Pins (uo_out[7:0])
+
+| Pin | Function | Description |
+|-----|----------|-------------|
+| 0 | PHI1 | CPU phase 1 clock |
+| 1 | PHI2 | CPU phase 2 clock |
+| 2 | R/W | Read/write signal (1=read, 0=write) |
+| 3 | SYNC | Opcode fetch indicator |
+| 4 | GPIOA2 | GPIO pin 2 output (unidirectional) |
+| 5 | GPIOA3 | GPIO pin 3 output (unidirectional) |
+| 6 | GPIOA4 | GPIO pin 4 output (unidirectional) |
+| 7 | GPIOA5 | GPIO pin 5 output (unidirectional) |
+
+### Bidirectional Pins (uio[7:0])
+
+| Pin | Function | Description |
+|-----|----------|-------------|
+| 0-7 | MUX_DATA[7:0] | Multiplexed address/data bus |
+
+## How to Test
+
+### Minimal Setup
+
+1. **Power**: 3.3V I/O, 1.2V core
+2. **Clock**: 20MHz nominal (configurable)
+3. **Reset**: Assert reset_n low, then high
+4. **Memory Controller**: RP2040 or similar providing:
+   - MUX_SEL[1:0] sequencing
+   - External RAM/ROM contents
+   - Proper bus timing
+
+## Peripheral Registers Quick Reference
+
+### GPIO (0xA000-0xA00B)
+- **0xA000**: OE - Output Enable (0=input, 1=output)
+- **0xA001**: OUT - Output Data
+- **0xA002**: IN - Input Data (read-only)
+- **0xA004-0xA00B**: MODE_PIN0-7 - Pin function select
+  - 0x00 = GPIO, 0x01 = UART_TX, 0x02 = UART_RX, 0x03 = SK6812_DATA
+  - On TinyTapeout only PIN0-5 are connected to physical pins
+
+### SK6812 LED (0xA010-0xA017)
+- **0xA010**: CONTROL - Write 1 to start
+- **0xA011**: CLKDIV - Clock divider
+- **0xA012-0xA015**: RED, GREEN, BLUE, WHITE (0-255)
+- **0xA016**: STATUS - Bit 0 = BUSY
+
+### Timer (0xA020-0xA027)
+- **0xA020**: CTRL - Control (ENABLE | AUTO_RELOAD | IRQ_ENABLE | LOAD)
+- **0xA021**: STATUS - Bit 0 = OVERFLOW (write 1 to clear)
+- **0xA022-0xA023**: COUNT_LO/HI - Counter value (read-only)
+- **0xA024-0xA025**: RELOAD_LO/HI - Reload value
+- **0xA026**: PRESCALER - Clock prescaler (0-255)
+
+### Clock Control (0xA030-0xA033)
+- **0xA030**: CPU_DIV - CPU clock divisor (0-255)
+  - cpu_freq = cpu_clk / (CPU_DIV + 1)
+- **0xA032**: STATUS - Bit 0 = CPU_LOCKED (always 1)
+
+### UART (0xA040-0xA047)
+- **0xA040**: CTRL - TX_EN | RX_EN | TX_IRQ_EN | RX_IRQ_EN
+- **0xA041**: STATUS - TX_READY | RX_READY | TX_EMPTY | RX_FULL | TX_ACTIVE | RX_ERROR
+- **0xA042**: DATA - FIFO access (read/write)
+- **0xA043-0xA044**: BAUD_LO/HI - Baud divisor
+  - baud = sysclk / (16 × (divisor + 1))
+
+## Testing
+
+Testbenches use cocotb:
 
 ```bash
-# Run all tests
-uv run python test_runner.py
-
-# Run tests for a specific module
-uv run python test_runner.py sk6812rgbw
-uv run python test_runner.py cpu
-uv run python test_runner.py spi_slave
-uv run python test_runner.py spi_master
-uv run python test_runner.py spi_flash
-uv run python test_runner.py led_controller
+cd test
+make
 ```
 
-### Hardware testing
+Tests cover:
+- CPU instruction execution
+- Peripheral register access
+- Bus multiplexer protocol
+- UART TX/RX
+- Timer operation
+- GPIO modes
 
-1. Connect SPI flash with program at address 0x0000
-2. Connect SK6812RGBW LED strip to LED_DATA output
-3. Power on - device starts executing flash program immediately
-4. Optionally configure via SPI slave interface
+## Architecture
 
-### SPI Protocol
-- **Read**: Send address (bit 7=0), receive data next byte
-- **Write**: Send address with bit 7=1, then data byte
-- Auto-increment for consecutive access
+**Technology**: IHP SG13G2 130nm
+**Die Size**: 2×2 TinyTapeout tiles
+**Clock**: 20 MHz nominal
 
-## External hardware
+## External Resources
 
-### Required
-- **SPI Flash**: Any SPI NOR flash with 0x03 read command support (e.g., W25Q32, AT25SF041)
-- **SK6812RGBW LEDs**: LED strip or individual addressable LEDs
+- **Datasheet**: [m6502_datasheet.pdf](m6502_datasheet.pdf) - Complete technical reference
+- **Upstream Project**: [m6502](https://github.com/chrismoos/m6502) - Full MCU implementation with RP2040 memory controller example
+- **6502 Reference**: [6502.org](http://www.6502.org/) - Instruction set and programming guides
+- **W65C02S Datasheet**: Western Design Center
+- **MOS 6502 Programming Manual**: Original MOS Technology documentation
 
-### Pinout
-| Signal | Direction | Description |
-|--------|-----------|-------------|
-| i_clk | Input | System clock (default 50 MHz) |
-| i_reset_n | Input | Active-low reset |
-| i_spi_* | Input | SPI slave (config) |
-| o_spi_miso | Output | SPI slave MISO |
-| o_flash_* | Output | SPI flash interface |
-| i_flash_spi_miso | Input | Flash MISO |
-| o_data | Output | SK6812RGBW serial data |
+## Development Tools
 
-## Tiny Tapeout Pinout
+- **cc65**: C compiler and assembler suite for 6502
+- **ACME**: Cross-assembler
+- **py65**: Python-based 6502 simulator for testing code before hardware
 
-### Dedicated Inputs (ui_in)
-| Pin | Signal | Description |
-|-----|--------|-------------|
-| ui[0] | SPI_SCK | SPI slave clock |
-| ui[1] | SPI_SS_N | SPI slave select (active low) |
-| ui[2] | SPI_MOSI | SPI slave data in |
-| ui[3] | FLASH_MISO | SPI flash data out |
-| ui[4-7] | - | Unused |
+## What is TinyTapeout?
 
-### Dedicated Outputs (uo_out)
-| Pin | Signal | Description |
-|-----|--------|-------------|
-| uo[0] | FLASH_SS_N | SPI flash chip select (active low) |
-| uo[1] | FLASH_MOSI | SPI flash data in |
-| uo[2] | FLASH_SCK | SPI flash clock |
-| uo[3] | LED_DATA | SK6812RGBW serial data output |
-| uo[4-7] | - | Unused |
-
-### Bidirectional IOs (uio)
-| Pin | Signal | Direction | Description |
-|-----|--------|-----------|-------------|
-| uio[0] | SPI_MISO | Output | SPI slave data out (active only when SS_N is low) |
-| uio[1-7] | - | Input | Unused |
+Tiny Tapeout is an educational project that makes it easier and cheaper to get your digital designs manufactured on a real chip. Learn more at [tinytapeout.com](https://tinytapeout.com).

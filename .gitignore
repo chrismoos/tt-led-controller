@@ -15,3 +15,4 @@ tt/
 bin/
 sim_build
 build
+*.swp

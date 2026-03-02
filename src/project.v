@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2024 Your Name
+ * Copyright (c) 2024 Chris Moos
  * SPDX-License-Identifier: Apache-2.0
  */
 
 `default_nettype none
 
-module tt_um_chrismoos_led_controller (
+module tt_um_chrismoos_6502_mcu (
     input  wire [7:0] ui_in,    // Dedicated inputs
     output wire [7:0] uo_out,   // Dedicated outputs
     input  wire [7:0] uio_in,   // IOs: Input path
@@ -16,39 +16,79 @@ module tt_um_chrismoos_led_controller (
     input  wire       rst_n     // reset_n - low to reset
 );
 
-  // Assign unused pins
-  genvar x;
-  for(x = 1; x < 8; x++) begin
-    assign uio_out[x] = 0;
-    assign uio_oe[x] = 0;
-  end
-  for(x = 4; x < 8; x++) begin
-    assign uo_out[x] = 0;
-  end
-
-  // List all unused inputs to prevent warnings
   wire _unused = &{ena};
 
-  wire spi_ss_n;
-  assign spi_ss_n = ui_in[1];
+  // Input assignments
+  wire [1:0] mux_sel = ui_in[1:0];
+  wire i_rdy = ui_in[2];
+  wire i_nmi_n = ui_in[3];
+  wire i_irq_n = ui_in[4];
+  wire i_so_n = ui_in[5];
+  wire [1:0] gpio_in = ui_in[7:6];
 
-  assign uio_oe[0] = !spi_ss_n;
+  // MCU signals
+  wire [7:0] mcu_bus_data_out;
+  wire [15:0] mcu_bus_addr;
+  wire mcu_rw;
+  wire mcu_phi1;
+  wire mcu_phi2;
+  wire mcu_sync;
+  /* verilator lint_off UNUSEDSIGNAL */
+  wire [7:0] gpio_out;
+  wire [7:0] gpio_oe;
+  /* verilator lint_on UNUSEDSIGNAL */
 
-  led_controller led_controller (
+  // Bus multiplexer
+  wire [7:0] mux_data_out;
+  wire mux_data_oe;
+
+  bus_multiplexer bus_mux (
+    .i_sel(mux_sel),
+    .i_cpu_data(mcu_bus_data_out),
+    .i_cpu_addr(mcu_bus_addr),
+    .o_mux_data(mux_data_out),
+    .o_mux_data_oe(mux_data_oe)
+  );
+
+  // MCU
+  mcu #(
+    .START_PC_ENABLED(0),
+    .START_PC(16'h0400),
+    .ENABLE_SK6812(0),
+    .LED_DEFAULT_CLOCK_DIV(2),
+    .CPU_CLOCK_DIV_DEFAULT(8'h49),  // CPU at 1Mhz
+    .UART_FIFO_DEPTH(2)
+  ) mcu_inst (
     .i_clk(clk),
     .i_reset_n(rst_n),
-
-    .i_spi_sck(ui_in[0]),
-    .i_spi_ss_n(spi_ss_n),
-    .i_spi_mosi(ui_in[2]),
-    .o_spi_miso(uio_out[0]),
-
-    .o_flash_spi_ss_n(uo_out[0]),
-    .o_flash_spi_mosi(uo_out[1]),
-    .o_flash_spi_sck(uo_out[2]),
-    .i_flash_spi_miso(ui_in[3]),
-
-    .o_data(uo_out[3])
+    .i_bus_data(uio_in),
+    .o_bus_data(mcu_bus_data_out),
+    .o_bus_addr(mcu_bus_addr),
+    .i_gpioa_input({6'b0, gpio_in}),        // GPIO[1:0] inputs
+    .o_gpioa_output(gpio_out),              // GPIO[7:0] outputs
+    .o_gpioa_oe(gpio_oe),
+    .o_bus_rw(mcu_rw),
+    .o_phi1(mcu_phi1),
+    .o_phi2(mcu_phi2),
+    .o_sync(mcu_sync),
+    .i_rdy(i_rdy),
+    .i_nmi_n(i_nmi_n),
+    .i_irq_n_ext(i_irq_n),
+    .i_so_n(i_so_n),
+    .i_debug_sel(3'b0),
+    /* verilator lint_off PINCONNECTEMPTY */
+    .o_debug_data()
+    /* verilator lint_on PINCONNECTEMPTY */
   );
+
+  // Outputs - dedicated CPU control signals + GPIO outputs
+  assign uo_out[0] = mcu_phi1;
+  assign uo_out[1] = mcu_phi2;
+  assign uo_out[2] = mcu_rw;
+  assign uo_out[3] = mcu_sync;
+  assign uo_out[7:4] = gpio_out[5:2];  // GPIO[5:2] outputs (output-only)
+
+  assign uio_out = mux_data_out;
+  assign uio_oe = {8{mux_data_oe}};
 
 endmodule

@@ -4,7 +4,7 @@
 # Configuration
 LATEX = pdflatex
 LATEXFLAGS = -interaction=nonstopmode -halt-on-error
-DOCUMENT = led_controller_datasheet
+DOCUMENT = m6502_datasheet
 OUTPUT_DIR = build
 
 # Source files

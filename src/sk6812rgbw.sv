@@ -30,7 +30,7 @@ assign o_busy = state == STATE_DATA || state == STATE_RESET;
 
 localparam RESET_CYCLES = 800;
 
-always @(posedge i_clk) begin
+always @(posedge i_clk or negedge i_reset_n) begin
     if(!i_reset_n) begin
         state <= STATE_RESET;
         low_cycles <= RESET_CYCLES;
@@ -83,11 +83,6 @@ always @(posedge i_clk) begin
                                 low_cycles <= low_cycles - 1;
                         end
 
-                        // It takes 2 cycles from here to be ready to write
-                        // the next bit, so transition now
-                        /*if (low_cycles == 1) begin
-                            state <= STATE_IDLE;
-                        end*/
                         if (low_cycles == 0) begin
                             if (color[pixel_counter -1]) begin
                                 high_cycles <= 6;
