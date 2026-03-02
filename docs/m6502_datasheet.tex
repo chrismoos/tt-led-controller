@@ -68,7 +68,7 @@
     \vspace*{2cm}
     {\Huge\bfseries\color{headerblue} 6502 Microcontroller\\[0.5cm]}
     {\Large Complete CPU with Bus Multiplexer\\[0.3cm]}
-    {\large GPIO, Timer, UART, and SK6812 LED Controller\\[2cm]}
+    {\large GPIO, Timer, and UART Controller\\[2cm]}
 
     \begin{tikzpicture}
         \draw[thick, headerblue, rounded corners=10pt] (0,0) rectangle (12,6);
@@ -124,10 +124,9 @@ The TinyTapeout 6502 Microcontroller is a complete MOS Technology 6502-compatibl
             \item GPIO: 6 pins (2 input-only, 4 output-only on TinyTapeout; internally bidirectional)
             \item UART: 8N1 serial with 4-byte TX/RX FIFOs
             \item Timer: 16-bit timer with prescaler and interrupt support
-            \item SK6812: Hardware RGB LED controller with pin multiplexing
             \item Clock Control: Runtime CPU clock division
         \end{itemize}
-    \item \textbf{Pin Multiplexing}: UART, SK6812, and GPIO can share physical pins via mode registers
+    \item \textbf{Pin Multiplexing}: UART and GPIO can share physical pins via mode registers
     \item \textbf{TinyTapeout Optimized}: Fits in 2×2 tile allocation with efficient gate usage
 \end{itemize}
 
@@ -162,7 +161,7 @@ The system consists of three major components:
 \begin{enumerate}
     \item \textbf{6502 CPU Core}: Executes instructions and drives the internal bus
     \item \textbf{Bus Multiplexer}: Converts 16-bit address + 8-bit data to 8-bit multiplexed bus
-    \item \textbf{Memory-Mapped Peripherals}: GPIO, UART, Timer, SK6812 LED, Clock Control
+    \item \textbf{Memory-Mapped Peripherals}: GPIO, UART, Timer, Clock Control
 \end{enumerate}
 
 The CPU accesses both internal peripherals and external memory through a unified 64KB address space. Address decoding logic routes accesses to 0xA000-0xA047 to internal peripherals, while all other addresses are multiplexed to the external bus.
@@ -177,7 +176,7 @@ The CPU accesses both internal peripherals and external memory through a unified
 \midrule
 0x0000 -- 0x9FFF & 40KB & External memory (via bus mux) \\
 0xA000 -- 0xA00B & 12 bytes & GPIO registers \\
-0xA010 -- 0xA017 & 8 bytes & SK6812 LED controller \\
+0xA010 -- 0xA017 & 8 bytes & Reserved \\
 0xA020 -- 0xA027 & 8 bytes & Timer \\
 0xA030 -- 0xA033 & 4 bytes & Clock control \\
 0xA040 -- 0xA047 & 8 bytes & UART \\
@@ -288,7 +287,6 @@ Each GPIO pin has an independent mode register (0xA004-0xA009) that can configur
     \item GPIO mode (0x00) -- Standard I/O
     \item UART TX mode (0x01) -- UART transmit output
     \item UART RX mode (0x02) -- UART receive input
-    \item SK6812 DATA mode (0x03) -- LED controller output
 \end{itemize}
 
 See Section 4 for complete GPIO peripheral documentation.
@@ -335,8 +333,7 @@ See Section 4 for complete GPIO peripheral documentation.
 0x00 & GPIO -- Standard I/O controlled by OE/OUT \\
 0x01 & UART0\_TX -- UART transmit output \\
 0x02 & UART0\_RX -- UART receive input \\
-0x03 & SK6812\_DATA -- LED controller output \\
-0x04-0xFF & Reserved \\
+0x03-0xFF & Reserved \\
 \bottomrule
 \end{tabular}
 \caption{GPIO Pin Mode Values}
@@ -368,103 +365,6 @@ STA $A006         ; MODE_PIN2
 ; Set GPIO3 as UART RX
 LDA #$02          ; UART0_RX mode
 STA $A007         ; MODE_PIN3
-\end{lstlisting}
-
-\subsection{SK6812 LED Controller (0xA010-0xA017)}
-
-Hardware controller for SK6812/WS2812 addressable RGB LEDs with precise timing.
-
-\subsubsection{Register Map}
-
-\begin{longtable}{lll}
-\toprule
-\textbf{Address} & \textbf{Register} & \textbf{Description} \\
-\midrule
-\endhead
-0xA010 & CONTROL & Control register (write 1 to start) \\
-0xA011 & CLKDIV & Clock divider for bit timing \\
-0xA012 & RED & Red component (0-255) \\
-0xA013 & GREEN & Green component (0-255) \\
-0xA014 & BLUE & Blue component (0-255) \\
-0xA015 & WHITE & White component (0-255, unused for RGB) \\
-0xA016 & STATUS & Status register (bit 0 = BUSY) \\
-0xA017 & Reserved & -- \\
-\bottomrule
-\caption{SK6812 Register Map}
-\end{longtable}
-
-\subsubsection{Pin Configuration}
-
-The SK6812 data output must be routed to a GPIO pin using the mode register:
-
-\begin{lstlisting}[language=asm6502, caption=Configure SK6812 output on GPIO4]
-LDA #$03          ; SK6812_DATA mode
-STA $A008         ; MODE_PIN4
-\end{lstlisting}
-
-\subsubsection{Protocol Sequence}
-
-To update an LED:
-\begin{enumerate}
-    \item Wait for BUSY=0 (read STATUS register, bit 0)
-    \item Write RED, GREEN, BLUE values (WHITE is ignored for RGB LEDs)
-    \item Write 0x01 to CONTROL to start transmission
-    \item Repeat for each LED in chain
-    \item After last LED, wait 50$\\mu$s+ for latch
-\end{enumerate}
-
-\subsubsection{Example: Updating LED Strip}
-
-\begin{lstlisting}[language=asm6502, caption=Update 3-LED RGB strip]
-; Configure GPIO4 as LED data output
-LDA #$03
-STA $A008         ; MODE_PIN4 = SK6812_DATA
-
-; LED 0: Red
-wait_0:
-    LDA $A016     ; Read STATUS
-    AND #$01      ; Check BUSY
-    BNE wait_0    ; Wait if busy
-
-LDA #$FF
-STA $A012         ; RED = 255
-LDA #$00
-STA $A013         ; GREEN = 0
-STA $A014         ; BLUE = 0
-LDA #$01
-STA $A010         ; Start transmission
-
-; LED 1: Green
-wait_1:
-    LDA $A016
-    AND #$01
-    BNE wait_1
-
-LDA #$00
-STA $A012         ; RED = 0
-LDA #$FF
-STA $A013         ; GREEN = 255
-LDA #$00
-STA $A014         ; BLUE = 0
-LDA #$01
-STA $A010
-
-; LED 2: Blue
-wait_2:
-    LDA $A016
-    AND #$01
-    BNE wait_2
-
-LDA #$00
-STA $A012         ; RED = 0
-STA $A013         ; GREEN = 0
-LDA #$FF
-STA $A014         ; BLUE = 255
-LDA #$01
-STA $A010
-
-; Wait for latch (50$\\mu$s+ idle time)
-; Implement delay loop here
 \end{lstlisting}
 
 \subsection{Timer (0xA020-0xA027)}
@@ -867,7 +767,6 @@ CPU Clock (default) & 50MHz & Configurable via CPU\_CLOCK\_HW\_DIV \\
 CPU Clock (min) & 195kHz & CPU\_DIV = 255 \\
 UART Baud Rate & 9600-115200 & Standard rates supported \\
 Timer Resolution & 20ns & At 50MHz sysclk, PRESCALER=0 \\
-SK6812 Bit Period & Configurable & Set via CLKDIV register \\
 \bottomrule
 \end{tabular}
 \caption{Timing Specifications}
@@ -888,11 +787,10 @@ Bus Multiplexer & 44 \\
 GPIO Peripheral & 135 \\
 UART (TX+RX+Main) & 472 \\
 Timer & 151 \\
-SK6812 LED & 188 \\
 Clock Control & 72 \\
 MCU Integration & 216 \\
 \midrule
-\textbf{Total RTL} & \textbf{~2,900 lines} \\
+\textbf{Total RTL} & \textbf{~2,700 lines} \\
 \bottomrule
 \end{tabular}
 \caption{RTL Size Breakdown}
